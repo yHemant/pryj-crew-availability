@@ -59,11 +59,16 @@ router.get('/summary', async (req, res) => {
           ELSE 'OS'
         END AS crew_type,
 
-        /* ── 0-4 bucket (today only) ── */
+        /* ── 0-4 bucket (all earlier active crew + today 00:00 - 04:00) ── */
         COUNT(*) FILTER (WHERE
-          DATE(avail_time) = $1
-          AND EXTRACT(HOUR FROM avail_time) >= 0
-          AND EXTRACT(HOUR FROM avail_time) < 4
+          (
+            DATE(avail_time) < $1
+            OR (
+              DATE(avail_time) = $1
+              AND EXTRACT(HOUR FROM avail_time) >= 0
+              AND EXTRACT(HOUR FROM avail_time) < 4
+            )
+          )
           AND UPPER(TRIM(status)) IN ('REST','CALLED','BOOKED')
         ) AS "bucket_0_4",
 

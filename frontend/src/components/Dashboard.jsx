@@ -131,7 +131,7 @@ export default function Dashboard({ onLogout }) {
                 )}
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
-                Displaying crew availability buckets for today's hours (00:00 - 24:00) on {formatDateDisplay(activeDate) || 'selected date'}
+                Displaying crew availability buckets (0-4 slot includes all earlier available crew) on {formatDateDisplay(activeDate) || 'selected date'}
               </p>
             </div>
 

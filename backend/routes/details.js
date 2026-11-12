@@ -118,10 +118,16 @@ router.get('/details', async (req, res) => {
 
     switch (normalizedBucket) {
       case '0-4':
+        // 0-4 bucket: includes crews earlier than 00:00 of today + today's 0-4 slot
         conditions.push(`(
-          DATE(avail_time) = ${dateParam}
-          AND EXTRACT(HOUR FROM avail_time) >= 0
-          AND EXTRACT(HOUR FROM avail_time) < 4
+          (
+            DATE(avail_time) < ${dateParam}
+            OR (
+              DATE(avail_time) = ${dateParam}
+              AND EXTRACT(HOUR FROM avail_time) >= 0
+              AND EXTRACT(HOUR FROM avail_time) < 4
+            )
+          )
           AND ${statusBase}
         )`);
         break;
@@ -161,12 +167,17 @@ router.get('/details', async (req, res) => {
         break;
 
       case 'TOTAL':
-        // Union of all buckets matching the summary table on target date:
+        // Union of all buckets matching the summary table (all earlier + today + LEAVE exception):
         conditions.push(`(
           (
-            DATE(avail_time) = ${dateParam}
-            AND EXTRACT(HOUR FROM avail_time) >= 0
-            AND EXTRACT(HOUR FROM avail_time) < 24
+            (
+              DATE(avail_time) < ${dateParam}
+              OR (
+                DATE(avail_time) = ${dateParam}
+                AND EXTRACT(HOUR FROM avail_time) >= 0
+                AND EXTRACT(HOUR FROM avail_time) < 24
+              )
+            )
             AND ${statusBase}
           )
           OR (
