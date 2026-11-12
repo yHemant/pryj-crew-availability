@@ -1,0 +1,16 @@
+<USER_REQUEST>
+on the frontend section-wise crew summary, it is showing the data of other dates also. it should take the data of hours of today's date only. check the logic of the section-wise crew summary, it should match the logic of the excel i am providing. sheet1 has details and sheet2 has its summary. fix the frontend summary.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-11-11T07:49:23+05:30.
+
+The user's current state is as follows:
+Active Document: d:\Code\Crew Availability\backend\.env (LANGUAGE_UNSPECIFIED)
+Cursor is on line: 1
+Other open documents:
+- d:\Code\Crew Availability\backend\db.js (LANGUAGE_UNSPECIFIED)
+- d:\Code\Crew Availability\backend\routes\details.js (LANGUAGE_UNSPECIFIED)
+- d:\Code\Crew Availability\frontend\src\components\Dashboard.jsx (LANGUAGE_UNSPECIFIED)
+- d:\Code\Crew Availability\frontend\src\components\DetailView.jsx (LANGUAGE_UNSPECIFIED)
+- d:\Code\Crew Availability\backend\routes\upload.js (LANGUAGE_UNSPECIFIED)
+</ADDITIONAL_METADATA>
