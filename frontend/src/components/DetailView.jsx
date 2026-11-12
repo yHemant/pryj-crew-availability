@@ -22,6 +22,50 @@ const COLUMN_HEADERS = [
   { key: 'hq',               label: 'HQ'               },
 ];
 
+function formatFortnightHrs(val) {
+  if (val == null || val === '' || val === 'null' || val === 'undefined' || val === '-') {
+    return '00:00';
+  }
+  const s = String(val).trim();
+  if (s === '-' || s === '' || s === '0' || s === '00:00:00') return '00:00';
+
+  // 1. If it's already in [hh]:mm format (e.g. "50:54" or "26:26" or "50:54:00")
+  const match = s.match(/^(\d+):(\d{2})(?::\d{2})?$/);
+  if (match) {
+    const hrs = parseInt(match[1], 10);
+    const mins = parseInt(match[2], 10);
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  }
+
+  // 2. If it was stored as an 1899/1900 Date string (from XLSX with cellDates: true)
+  if (s.includes('1899-') || s.includes('1900-')) {
+    const dt = new Date(s);
+    if (!isNaN(dt.getTime())) {
+      const baseMs = s.includes(':50')
+        ? new Date('1899-12-29T18:38:50.000Z').getTime()
+        : new Date('1899-12-30T00:00:00.000Z').getTime();
+      const diffMs = dt.getTime() - baseMs;
+      if (diffMs >= 0) {
+        const totalMinutes = Math.round(diffMs / 60000);
+        const hrs = Math.floor(totalMinutes / 60);
+        const mins = totalMinutes % 60;
+        return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+      }
+    }
+  }
+
+  // 3. If it's a numeric Excel serial days number (e.g. 2.12083333)
+  const num = parseFloat(s);
+  if (!isNaN(num)) {
+    const totalMinutes = Math.round(num * 24 * 60);
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  }
+
+  return s;
+}
+
 function formatCellValue(key, val) {
   if (val == null || val === '' || val === 'null' || val === 'undefined' || val === '-') {
     return '—';
@@ -29,27 +73,7 @@ function formatCellValue(key, val) {
 
   // Handle Fortnight Hours (absolute hours [hh]:mm)
   if (key === 'fortnight_hrs') {
-    const s = String(val).trim();
-    if (s === '-' || s === '' || s === '0' || s === '00:00:00') return '00:00';
-    // If it's already in [hh]:mm or [hh]:mm:ss format
-    const m = s.match(/^(\d+):(\d{2})/);
-    if (m) {
-      return `${m[1]}:${m[2]}`;
-    }
-    // If it was stored as an 1899/1900 date ISO string by legacy parser
-    if (s.includes('1899-') || s.includes('1900-')) {
-      const match = s.match(/T(\d{2}):(\d{2})/);
-      if (match) return `${match[1]}:${match[2]}`;
-    }
-    // If it's a numeric serial day value (e.g. 2.120833)
-    const num = parseFloat(s);
-    if (!isNaN(num)) {
-      const totalMinutes = Math.round(num * 24 * 60);
-      const hrs = Math.floor(totalMinutes / 60);
-      const mins = totalMinutes % 60;
-      return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-    }
-    return s;
+    return formatFortnightHrs(val);
   }
 
   // Handle Date/Time fields: avail_time, called_time, ack_time, sign_on_time, last_signoff_time
