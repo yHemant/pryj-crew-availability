@@ -4,6 +4,10 @@ require('dotenv').config();
 
 const router = express.Router();
 
+const ADMIN_USER = process.env.ADMIN_USER || 'admin';
+const ADMIN_PASS = process.env.ADMIN_PASS || 'admin123';
+const JWT_SECRET = process.env.JWT_SECRET || 'pryj-crew-secret-key-fallback-2026';
+
 /**
  * POST /api/login
  * Validates credentials against .env vars and returns a JWT.
@@ -11,11 +15,8 @@ const router = express.Router();
 router.post('/login', (req, res) => {
   const { username, password } = req.body;
 
-  if (
-    username === process.env.ADMIN_USER &&
-    password === process.env.ADMIN_PASS
-  ) {
-    const token = jwt.sign({ username }, process.env.JWT_SECRET, {
+  if (username === ADMIN_USER && password === ADMIN_PASS) {
+    const token = jwt.sign({ username }, JWT_SECRET, {
       expiresIn: '24h',
     });
     return res.json({ token, message: 'Login successful' });

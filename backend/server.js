@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 
-const { initDB } = require('./db');
+const { pool, initDB, getDBStatus } = require('./db');
 
 // Route imports
 const authRoutes    = require('./routes/auth');
@@ -20,14 +20,19 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ── API Routes ──
-app.use('/api', authRoutes);      // POST /api/login
-app.use('/api', uploadRoutes);    // POST /api/upload
-app.use('/api', summaryRoutes);   // GET  /api/summary
-app.use('/api/crew', detailsRoutes); // GET  /api/crew/details
+app.use('/api', authRoutes);          // POST /api/login
+app.use('/api', uploadRoutes);        // POST /api/upload
+app.use('/api', summaryRoutes);       // GET  /api/summary
+app.use('/api/crew', detailsRoutes);  // GET  /api/crew/details
 
 // ── Health check ──
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const dbStatus = getDBStatus();
+  res.json({
+    status: dbStatus.ready ? 'ok' : 'initializing',
+    database: dbStatus,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 const fs = require('fs');
@@ -46,16 +51,34 @@ if (fs.existsSync(distPath)) {
   });
 }
 
-// ── Start ──
+// ── Start HTTP server immediately so Render detects port binding ──
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 PRYJ Crew Availability Backend running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+});
+
+// ── Initialize Database asynchronously with retries for cold start ──
 (async () => {
-  try {
-    await initDB();
-    app.listen(PORT, () => {
-      console.log(`🚀 PRYJ Crew Availability Backend running on http://localhost:${PORT}`);
-    });
-  } catch (err) {
-    console.error('❌ Failed to start server:', err.message);
-    process.exit(1);
+  const maxRetries = 5;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`⏳ Connecting to database (attempt ${attempt}/${maxRetries})...`);
+      await initDB();
+      return; // Connected successfully!
+    } catch (err) {
+      console.error(`❌ Database connection attempt ${attempt} failed:`, err.message);
+      if (attempt < maxRetries) {
+        console.log(`🔁 Retrying in 3 seconds (allowing database to wake up)...`);
+        await new Promise((r) => setTimeout(r, 3000));
+      } else {
+        console.error('💥 All database connection attempts failed!');
+        console.error('👉 Please verify your DATABASE_URL in Render Environment Variables.');
+        if (!process.env.DATABASE_URL) {
+          console.error('👉 DATABASE_URL is missing! Render needs a remote PostgreSQL connection string (e.g. from Neon).');
+        }
+      }
+    }
   }
 })();
+
 

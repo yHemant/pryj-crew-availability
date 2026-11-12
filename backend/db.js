@@ -7,10 +7,23 @@ const dbUser = process.env.DB_USER || 'postgres';
 const dbPassword = process.env.DB_PASSWORD || 'postgres';
 const dbName = process.env.DB_NAME || 'crew_availability';
 
-const poolConfig = process.env.DATABASE_URL
+const hasDatabaseUrl = !!process.env.DATABASE_URL;
+
+if (hasDatabaseUrl) {
+  const masked = process.env.DATABASE_URL.replace(/:([^:@]+)@/, ':****@');
+  console.log(`🔌 Database: Connecting via DATABASE_URL (${masked})`);
+} else {
+  console.warn(`⚠️ Database: DATABASE_URL not detected! Falling back to ${dbHost}:${dbPort}/${dbName}`);
+  if (process.env.NODE_ENV === 'production') {
+    console.warn(`⚠️ Warning: In production, please set DATABASE_URL in Render's Environment Variables tab.`);
+  }
+}
+
+const poolConfig = hasDatabaseUrl
   ? {
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 10000,
     }
   : {
       host: dbHost,
@@ -18,9 +31,19 @@ const poolConfig = process.env.DATABASE_URL
       user: dbUser,
       password: dbPassword,
       database: dbName,
+      connectionTimeoutMillis: 5000,
     };
 
 const pool = new Pool(poolConfig);
+
+let dbReady = false;
+let dbError = null;
+
+const getDBStatus = () => ({
+  ready: dbReady,
+  hasDatabaseUrl,
+  error: dbError,
+});
 
 /**
  * Initialize database — ensure database exists and crew_details table is ready.
@@ -35,6 +58,7 @@ const initDB = async () => {
         user: dbUser,
         password: dbPassword,
         database: 'postgres',
+        connectionTimeoutMillis: 3000,
       });
       await adminClient.connect();
       const dbCheck = await adminClient.query(
@@ -48,7 +72,7 @@ const initDB = async () => {
       }
       await adminClient.end();
     } catch (err) {
-      console.warn('⚠️ Local database check warning:', err.message);
+      console.warn('⚠️ Local database check note:', err.message);
     }
   }
 
@@ -79,10 +103,19 @@ const initDB = async () => {
     CREATE INDEX IF NOT EXISTS idx_crew_avail_time ON crew_details (avail_time);
     CREATE INDEX IF NOT EXISTS idx_crew_hq ON crew_details (hq);
   `;
-  await pool.query(createTableQuery);
-  console.log('✅ Database initialized — crew_details table ready.');
+
+  try {
+    await pool.query(createTableQuery);
+    dbReady = true;
+    dbError = null;
+    console.log('✅ Database connected & crew_details table ready.');
+  } catch (err) {
+    dbError = err.message;
+    throw err;
+  }
 };
 
-module.exports = { pool, initDB };
+module.exports = { pool, initDB, getDBStatus };
+
 
 
