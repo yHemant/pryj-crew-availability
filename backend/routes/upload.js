@@ -33,34 +33,63 @@ const upload = multer({
 });
 
 /**
- * Convert an Excel serial date number to a JS Date.
- * Excel epoch: Jan 1, 1900 (with the famous 1900-leap-year bug).
+ * Convert an Excel serial time/duration to absolute hours [hh]:mm string.
+ * Excel serial for time is in days (e.g. 2.12083333 = 50 hours, 54 minutes).
  */
-function excelSerialToJSDate(serial) {
-  if (serial == null || serial === '') return null;
-
-  // Already a Date object (cellDates: true was used)
-  if (serial instanceof Date) {
-    return new Date(Math.round(serial.getTime() / 60000) * 60000);
-  }
-
-  // If it's a string, try to parse it directly
-  if (typeof serial === 'string') {
-    const d = new Date(serial);
-    return isNaN(d.getTime()) ? null : new Date(Math.round(d.getTime() / 60000) * 60000);
-  }
-
-  // Numeric Excel serial
+function parseFortnightHours(serial) {
+  if (serial == null || serial === '' || serial === '-') return '00:00';
   if (typeof serial === 'number') {
-    const utcDays = Math.floor(serial - 25569);
-    const utcValue = utcDays * 86400;
-    const fractionalDay = serial - Math.floor(serial);
-    const totalSeconds = Math.round(fractionalDay * 86400);
-    const date = new Date(0);
-    date.setUTCSeconds(utcValue + totalSeconds);
-    return new Date(Math.round(date.getTime() / 60000) * 60000);
+    const totalMinutes = Math.round(serial * 24 * 60);
+    const hrs = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
   }
+  if (typeof serial === 'string') {
+    const s = serial.trim();
+    if (s === '-' || s === '' || s === '0' || s === '00:00:00') return '00:00';
+    const m = s.match(/^(\d+):(\d{2})/);
+    if (m) return `${m[1]}:${m[2]}`;
+    const num = parseFloat(s);
+    if (!isNaN(num)) {
+      const totalMinutes = Math.round(num * 24 * 60);
+      const hrs = Math.floor(totalMinutes / 60);
+      const mins = totalMinutes % 60;
+      return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    }
+    return s;
+  }
+  return String(serial);
+}
 
+/**
+ * Convert an Excel serial date number to clean 'YYYY-MM-DD HH:mm:00' timestamp.
+ * Round to nearest minute to eliminate any 10-second leap-second offset.
+ */
+function excelSerialToTimestamp(serial) {
+  if (serial == null || serial === '' || serial === '-') return null;
+  if (typeof serial === 'number') {
+    const totalMinutes = Math.round(serial * 24 * 60);
+    const daySerial = Math.floor(totalMinutes / (24 * 60));
+    const minOfDay = totalMinutes % (24 * 60);
+    const hour = Math.floor(minOfDay / 60);
+    const minute = minOfDay % 60;
+
+    // 25569 days between 1899-12-30 and 1970-01-01
+    const jsEpochDays = daySerial - 25569;
+    const utcMs = jsEpochDays * 86400000;
+    const d = new Date(utcMs);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const hh = String(hour).padStart(2, '0');
+    const mm = String(minute).padStart(2, '0');
+    return `${y}-${m}-${day} ${hh}:${mm}:00`;
+  }
+  if (typeof serial === 'string') {
+    const s = serial.trim();
+    if (s === '-' || s === '') return null;
+    return s;
+  }
   return null;
 }
 
@@ -69,9 +98,6 @@ function excelSerialToJSDate(serial) {
  */
 function safeString(val) {
   if (val == null) return null;
-  if (val instanceof Date) {
-    return val.toISOString();
-  }
   return String(val);
 }
 
@@ -113,8 +139,8 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req, res
   const filePath = req.file.path;
 
   try {
-    // Read the workbook
-    const workbook = XLSX.readFile(filePath, { cellDates: true });
+    // Read the workbook without auto-converting to Date objects to preserve exact serial numbers
+    const workbook = XLSX.readFile(filePath, { cellDates: false });
     const sheetName = workbook.SheetNames[0]; // Sheet1
     const sheet = workbook.Sheets[sheetName];
 
@@ -152,16 +178,21 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req, res
         // Skip empty rows (no crew_id)
         if (!vals.crew_id) continue;
 
-        // Convert avail_time to a proper timestamp
-        vals.avail_time = excelSerialToJSDate(vals.avail_time);
+        // Parse Fortnight hours into absolute [hh]:mm
+        vals.fortnight_hrs = parseFortnightHours(vals.fortnight_hrs);
+
+        // Convert date/time serial numbers to clean 'YYYY-MM-DD HH:mm:00' timestamps
+        vals.avail_time = excelSerialToTimestamp(vals.avail_time);
+        vals.called_time = excelSerialToTimestamp(vals.called_time);
+        vals.ack_time = excelSerialToTimestamp(vals.ack_time);
+        vals.sign_on_time = excelSerialToTimestamp(vals.sign_on_time);
+        vals.last_signoff_time = excelSerialToTimestamp(vals.last_signoff_time);
 
         // Build the parameter array in column order
         const params = DB_COLUMNS.map((col) => {
-          if (col === 'avail_time') return vals[col]; // already a Date or null
-          if (['called_time', 'ack_time', 'sign_on_time', 'last_signoff_time'].includes(col)) {
-            // These may be dates in Excel; store as text
-            if (vals[col] instanceof Date) return vals[col].toISOString();
-            return safeString(vals[col]);
+          if (col === 'fortnight_hrs') return vals.fortnight_hrs;
+          if (['avail_time', 'called_time', 'ack_time', 'sign_on_time', 'last_signoff_time'].includes(col)) {
+            return vals[col];
           }
           return safeString(vals[col]);
         });
@@ -169,13 +200,6 @@ router.post('/upload', authenticateToken, upload.single('file'), async (req, res
         await client.query(insertSQL, params);
         insertedCount++;
       }
-
-      // Ensure all timestamps are cleanly aligned to exact minutes
-      await client.query(`
-        UPDATE crew_details
-        SET avail_time = date_trunc('minute', avail_time + INTERVAL '30 seconds')
-        WHERE avail_time IS NOT NULL
-      `);
 
       await client.query('COMMIT');
     } catch (txErr) {

@@ -23,26 +23,53 @@ const COLUMN_HEADERS = [
 ];
 
 function formatCellValue(key, val) {
-  if (val == null || val === '' || val === 'null' || val === 'undefined') {
+  if (val == null || val === '' || val === 'null' || val === 'undefined' || val === '-') {
     return '—';
   }
 
-  // Handle Fortnight Hours (clean Excel time representation if parsed as 1899 date)
+  // Handle Fortnight Hours (absolute hours [hh]:mm)
   if (key === 'fortnight_hrs') {
-    const str = String(val);
-    if (str.includes('1899-') || str.includes('1900-')) {
-      const match = str.match(/T(\d{2}:\d{2})/);
-      if (match) return `${match[1]} hrs`;
+    const s = String(val).trim();
+    if (s === '-' || s === '' || s === '0' || s === '00:00:00') return '00:00';
+    // If it's already in [hh]:mm or [hh]:mm:ss format
+    const m = s.match(/^(\d+):(\d{2})/);
+    if (m) {
+      return `${m[1]}:${m[2]}`;
     }
-    return str;
+    // If it was stored as an 1899/1900 date ISO string by legacy parser
+    if (s.includes('1899-') || s.includes('1900-')) {
+      const match = s.match(/T(\d{2}):(\d{2})/);
+      if (match) return `${match[1]}:${match[2]}`;
+    }
+    // If it's a numeric serial day value (e.g. 2.120833)
+    const num = parseFloat(s);
+    if (!isNaN(num)) {
+      const totalMinutes = Math.round(num * 24 * 60);
+      const hrs = Math.floor(totalMinutes / 60);
+      const mins = totalMinutes % 60;
+      return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    }
+    return s;
   }
 
-  // Handle Date/Time fields
+  // Handle Date/Time fields: avail_time, called_time, ack_time, sign_on_time, last_signoff_time
   if (['avail_time', 'called_time', 'ack_time', 'sign_on_time', 'last_signoff_time'].includes(key)) {
+    const str = String(val).trim();
+    if (str === '-' || str === '') return '—';
+
+    // 1. If it's a clean 'YYYY-MM-DD HH:mm:ss' or 'YYYY-MM-DDTHH:mm:ss'
+    const isoMatch = str.replace('T', ' ').match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+    if (isoMatch) {
+      const [, y, m, d, hh, mm] = isoMatch;
+      return `${d}/${m}/${y} ${hh}:${mm}`;
+    }
+
+    // 2. If it's an ISO timestamp with Z from pg Date objects (e.g. 2026-11-10T22:39:00.000Z)
     try {
-      const d = new Date(val);
-      if (!isNaN(d.getTime())) {
-        return d.toLocaleString('en-IN', {
+      const dt = new Date(val);
+      if (!isNaN(dt.getTime())) {
+        return dt.toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata',
           day: '2-digit',
           month: '2-digit',
           year: 'numeric',
@@ -54,6 +81,8 @@ function formatCellValue(key, val) {
     } catch {
       // Fallback
     }
+
+    return str;
   }
 
   return String(val);

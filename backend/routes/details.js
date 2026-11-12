@@ -141,7 +141,8 @@ router.get('/details', async (req, res) => {
     const query = `
       SELECT
         sno, crew_id, crew_name, crew_designation, fortnight_hrs,
-        avail_time, avail_sttn, status, called_time, ack_time,
+        to_char(avail_time, 'YYYY-MM-DD HH24:MI:SS') AS avail_time,
+        avail_sttn, status, called_time, ack_time,
         sign_on_time, last_signoff_time, train_no, from_sttn, to_sttn, hq
       FROM crew_details
       WHERE ${whereClause}
